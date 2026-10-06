@@ -12,7 +12,6 @@ const createMessage = async (req, res) => {
       });
     }
 
-    // Save message to MongoDB
     const newMessage = await Message.create({
       name: name.trim(),
       email: email.trim().toLowerCase(),
@@ -20,7 +19,6 @@ const createMessage = async (req, res) => {
       message: message.trim(),
     });
 
-    // Send notification email
     try {
       await sendContactEmail({
         name: name.trim(),
@@ -28,13 +26,20 @@ const createMessage = async (req, res) => {
         subject: subject.trim(),
         message: message.trim(),
       });
+
+      return res.status(201).json({
+        success: true,
+        message:
+          "Message received and email notification sent successfully.",
+        data: newMessage,
+        emailSent: true,
+      });
     } catch (emailError) {
       console.error(
         "Contact email notification failed:",
         emailError.message
       );
 
-      // Message is already safely stored in MongoDB.
       return res.status(201).json({
         success: true,
         message:
@@ -43,13 +48,6 @@ const createMessage = async (req, res) => {
         emailSent: false,
       });
     }
-
-    return res.status(201).json({
-      success: true,
-      message: "Message received and email notification sent successfully.",
-      data: newMessage,
-      emailSent: true,
-    });
   } catch (error) {
     console.error("Create message error:", error);
 
@@ -92,7 +90,10 @@ const updateMessage = async (req, res) => {
     const message = await Message.findByIdAndUpdate(
       id,
       { status },
-      { new: true, runValidators: true }
+      {
+        new: true,
+        runValidators: true,
+      }
     );
 
     if (!message) {

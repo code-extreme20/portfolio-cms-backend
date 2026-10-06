@@ -1,5 +1,13 @@
 const Media = require("../models/Media");
 
+const getBackendUrl = (req) => {
+    if (process.env.BACKEND_URL) {
+        return process.env.BACKEND_URL.replace(/\/$/, "");
+    }
+
+    return `${req.protocol}://${req.get("host")}`;
+};
+
 const uploadImage = async (req, res) => {
     try {
         if (!req.file) {
@@ -9,7 +17,9 @@ const uploadImage = async (req, res) => {
             });
         }
 
-        const fileUrl = `/uploads/images/${req.file.filename}`;
+        const backendUrl = getBackendUrl(req);
+
+        const fileUrl = `${backendUrl}/uploads/images/${req.file.filename}`;
 
         const media = await Media.create({
             filename: req.file.filename,
@@ -31,6 +41,10 @@ const uploadImage = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Failed to upload image.",
+            error:
+                process.env.NODE_ENV === "development"
+                    ? error.message
+                    : undefined,
         });
     }
 };

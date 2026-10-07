@@ -16,7 +16,18 @@ const uploadImage = async (req, res) => {
 
     localFilePath = req.file.path;
 
-    // Upload image to Cloudinary
+    console.log("Starting Cloudinary upload...");
+    console.log("Local file:", localFilePath);
+
+    // Diagnostic check.
+    // This does NOT print the API secret itself.
+    console.log("Cloudinary config check:", {
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME || "MISSING",
+      hasApiKey: Boolean(process.env.CLOUDINARY_API_KEY),
+      hasApiSecret: Boolean(process.env.CLOUDINARY_API_SECRET),
+    });
+
+    // Upload temporary file to Cloudinary
     const cloudinaryResult = await cloudinary.uploader.upload(
       localFilePath,
       {
@@ -25,7 +36,12 @@ const uploadImage = async (req, res) => {
       }
     );
 
-    // Save permanent Cloudinary URL in MongoDB
+    console.log(
+      "Cloudinary upload successful:",
+      cloudinaryResult.secure_url
+    );
+
+    // Save Cloudinary URL in MongoDB
     const media = await Media.create({
       filename: cloudinaryResult.public_id,
       originalName: req.file.originalname,
@@ -35,9 +51,13 @@ const uploadImage = async (req, res) => {
       type: "image",
     });
 
-    // Remove temporary local file
+    console.log("Media saved to MongoDB:", media._id);
+
+    // Delete temporary Render/local file
     try {
       await fs.unlink(localFilePath);
+
+      console.log("Temporary file deleted successfully.");
     } catch (deleteError) {
       console.error(
         "Temporary file cleanup failed:",
@@ -51,12 +71,22 @@ const uploadImage = async (req, res) => {
       data: media,
     });
   } catch (error) {
-    console.error("Upload image error:", error);
+    console.error("=================================");
+    console.error("CLOUDINARY UPLOAD ERROR");
+    console.error("=================================");
+    console.error("Name:", error.name);
+    console.error("Message:", error.message);
+    console.error("HTTP Code:", error.http_code);
+    console.error("Full error:", error);
 
-    // Remove temporary file if Cloudinary upload/database save fails
+    // Remove temporary file if upload failed
     if (localFilePath) {
       try {
         await fs.unlink(localFilePath);
+
+        console.log(
+          "Temporary file deleted after failed upload."
+        );
       } catch (deleteError) {
         console.error(
           "Temporary file cleanup failed:",
@@ -68,10 +98,7 @@ const uploadImage = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to upload image.",
-      error:
-        process.env.NODE_ENV === "development"
-          ? error.message
-          : undefined,
+      error: error.message,
     });
   }
 };
@@ -112,9 +139,17 @@ const deleteMedia = async (req, res) => {
     // Delete image from Cloudinary
     if (media.filename) {
       try {
-        await cloudinary.uploader.destroy(media.filename, {
-          resource_type: "image",
-        });
+        const result = await cloudinary.uploader.destroy(
+          media.filename,
+          {
+            resource_type: "image",
+          }
+        );
+
+        console.log(
+          "Cloudinary delete result:",
+          result
+        );
       } catch (cloudinaryError) {
         console.error(
           "Cloudinary delete error:",

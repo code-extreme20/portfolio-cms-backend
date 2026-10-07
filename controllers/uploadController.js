@@ -3,10 +3,14 @@ const fs = require("fs/promises");
 const Media = require("../models/Media");
 const cloudinary = require("../config/cloudinary");
 
+// ==========================================
+// UPLOAD IMAGE
+// ==========================================
 const uploadImage = async (req, res) => {
   let localFilePath = null;
 
   try {
+    // Check uploaded file
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -14,20 +18,10 @@ const uploadImage = async (req, res) => {
       });
     }
 
+    // Multer temporarily saves the file locally
     localFilePath = req.file.path;
 
-    console.log("Starting Cloudinary upload...");
-    console.log("Local file:", localFilePath);
-
-    // Diagnostic check.
-    // This does NOT print the API secret itself.
-    console.log("Cloudinary config check:", {
-      cloudName: process.env.CLOUDINARY_CLOUD_NAME || "MISSING",
-      hasApiKey: Boolean(process.env.CLOUDINARY_API_KEY),
-      hasApiSecret: Boolean(process.env.CLOUDINARY_API_SECRET),
-    });
-
-    // Upload temporary file to Cloudinary
+    // Upload image to Cloudinary
     const cloudinaryResult = await cloudinary.uploader.upload(
       localFilePath,
       {
@@ -36,12 +30,7 @@ const uploadImage = async (req, res) => {
       }
     );
 
-    console.log(
-      "Cloudinary upload successful:",
-      cloudinaryResult.secure_url
-    );
-
-    // Save Cloudinary URL in MongoDB
+    // Save Cloudinary information in MongoDB
     const media = await Media.create({
       filename: cloudinaryResult.public_id,
       originalName: req.file.originalname,
@@ -51,13 +40,9 @@ const uploadImage = async (req, res) => {
       type: "image",
     });
 
-    console.log("Media saved to MongoDB:", media._id);
-
-    // Delete temporary Render/local file
+    // Delete temporary local file
     try {
       await fs.unlink(localFilePath);
-
-      console.log("Temporary file deleted successfully.");
     } catch (deleteError) {
       console.error(
         "Temporary file cleanup failed:",
@@ -71,22 +56,12 @@ const uploadImage = async (req, res) => {
       data: media,
     });
   } catch (error) {
-    console.error("=================================");
-    console.error("CLOUDINARY UPLOAD ERROR");
-    console.error("=================================");
-    console.error("Name:", error.name);
-    console.error("Message:", error.message);
-    console.error("HTTP Code:", error.http_code);
-    console.error("Full error:", error);
+    console.error("Upload image error:", error);
 
-    // Remove temporary file if upload failed
+    // Delete temporary file if upload failed
     if (localFilePath) {
       try {
         await fs.unlink(localFilePath);
-
-        console.log(
-          "Temporary file deleted after failed upload."
-        );
       } catch (deleteError) {
         console.error(
           "Temporary file cleanup failed:",
@@ -98,11 +73,17 @@ const uploadImage = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to upload image.",
-      error: error.message,
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
     });
   }
 };
 
+// ==========================================
+// GET ALL MEDIA
+// ==========================================
 const getMedia = async (req, res) => {
   try {
     const media = await Media.find().sort({
@@ -123,11 +104,15 @@ const getMedia = async (req, res) => {
   }
 };
 
+// ==========================================
+// DELETE MEDIA
+// ==========================================
 const deleteMedia = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const media = await Media.findByIdAndDelete(id);
+    // Find media first
+    const media = await Media.findById(id);
 
     if (!media) {
       return res.status(404).json({
@@ -139,16 +124,11 @@ const deleteMedia = async (req, res) => {
     // Delete image from Cloudinary
     if (media.filename) {
       try {
-        const result = await cloudinary.uploader.destroy(
+        await cloudinary.uploader.destroy(
           media.filename,
           {
             resource_type: "image",
           }
-        );
-
-        console.log(
-          "Cloudinary delete result:",
-          result
         );
       } catch (cloudinaryError) {
         console.error(
@@ -157,6 +137,9 @@ const deleteMedia = async (req, res) => {
         );
       }
     }
+
+    // Delete media record from MongoDB
+    await Media.findByIdAndDelete(id);
 
     return res.status(200).json({
       success: true,
